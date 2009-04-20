@@ -19,9 +19,12 @@ TUPLE: Minimize-State partitions working-set ;
     key key key' letter dict [ drop H{ } clone ] cache [ drop H{ } clone ] cache set-at ;
 
 : reverse-transtion-table ( transition-table -- reversed-transition-table ) 
+    ! for each state -> transitions
+        ! for each (letter, state') in state.transitions
+            ! add quotation adding state' -> state to dictionary at key letter
     transitions>> unzip [ unzip rot [ [ (reverse-transtion-table) ] 3curry ] curry 2map ] { } 2map-as concat 
     H{ } clone dup '[ _ swap call ] swapd each 
-    inline ;
+    ; inline
 
 : prepare-state-partitioning ( table -- rev-trans-table partitions working-set )
     {
@@ -33,12 +36,13 @@ TUPLE: Minimize-State partitions working-set ;
      [ sequence>cons Partitions boa ]
      [ { 0 1 } swap zip >hashtable { 0 1 } sequence>cons Working-set boa ]
     bi 
-    inline ;
+    ; inline
 
 : ingoing-states ( states rev-trans-table-elt -- states ) 
     '[ _ at assoc-union ] H{ } swap reduce ;
 
 : get-next-set ( minimize-state -- set )
+    ! order of quotations is important
     working-set>>
      [ sets-ids>> car>> ]
      [ sets-vector>> at ]
@@ -52,7 +56,7 @@ TUPLE: Minimize-State partitions working-set ;
      car>> elems>> swap partition dup empty? not [ swap ] when
      2array
      [ cdr>> (sub-partition) ] dip swons
-    ] if inline recursive ;
+    ] if ; inline recursive
 
 : number-first-sub-partitions ( sets cnt -- first-sets )
     over +nil+? [ drop ] 
@@ -90,6 +94,7 @@ TUPLE: Minimize-State partitions working-set ;
     [ [ cons ] change-sets-ids drop ] if ;
 
 : sets-ids-need-update? ( sets -- t/f )
+!     dup length 2 = [ second elems>> empty? not ] [ drop f ] if ;
     length 2 = ;
 
 : update-working-set ( working-set new-paritions -- new-working-set )
@@ -100,11 +105,12 @@ TUPLE: Minimize-State partitions working-set ;
       [ first2 2dup [ elems>> length ] bi@ [ > ] [ 0 = not ] bi and [ swap ] when drop 1array ] if
     ] lmap
     over
+    ! jezeli partner jest pusty to nie dodawac id
     '[
       _ over sets-ids-need-update? [ 2dup '[ _ update-sets-ids ] each ] when
       '[ _ [ dup id>> ] [ sets-vector>> set-at ] bi* ] each
     ] leach
-    inline ;
+    ; inline
 
 : update-partitions ( paritions -- new-paritions )
     [ [ first ] lmap ] [ [ second ] lmap>array [ elems>> empty? not ] filter sequence>cons ] bi
@@ -115,7 +121,7 @@ TUPLE: Minimize-State partitions working-set ;
     number-sub-partitions
     [ update-working-set ] keep
     update-partitions
-    inline ;
+    ; inline
 
 : (my-minimize) ( rev-trans-table partitions working-set -- new-partitions )
     dup sets-ids>> +nil+? [ drop nip ]
@@ -131,14 +137,14 @@ TUPLE: Minimize-State partitions working-set ;
      [ id>> swap working-set>> sets-vector>> delete-at ] dip
      tuple-slots first2 (my-minimize)
     ] if
-    inline recursive ;
+    ; inline recursive
 
 
 : my-minimize ( table -- new-table )
     prepare-state-partitioning
     (my-minimize)
     dup sets>> [ pprint "\n" print ] leach
-    inline ;
+    ; inline
 
 
 : reg2 ( -- reg )
