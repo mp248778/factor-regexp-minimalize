@@ -2,12 +2,7 @@
 ! See http://factorcode.org/license.txt for BSD license.
 USING: kernel sequences regexp.transition-tables fry assocs accessors arrays hashtables
 regexp.dfa regexp.classes lists prettyprint vectors locals sets combinators 
-deques math classes.tuple
-
-
-io vocabs.loader regexp.parser regexp.nfa regexp.disambiguate regexp.minimize
-tools.walker
-;
+deques math classes.tuple ;
 
 IN: my-minimalize
 TUPLE: subset elems id ;
@@ -106,7 +101,7 @@ C: <minimize-state> minimize-state
         [ first2 2dup [ elems>> length ] bi@ [ > ] [ 0 = not ] bi and [ swap ] when drop 1array ] if
     ] lmap ;
 
-: update-working-set ( working-set new-paritions -- new-working-set )
+: update-working-set ( working-set new-partitions -- new-working-set )
     filter-new-partitions
     over
     '[
@@ -114,11 +109,11 @@ C: <minimize-state> minimize-state
         '[ _ [ dup id>> ] [ sets-vector>> set-at ] bi* ] each
     ] leach ; 
 
-: update-partitions ( paritions -- new-paritions )
+: update-partitions ( partitions -- new-partitions )
     [ [ first ] lmap ] [ [ second ] lmap>array [ elems>> empty? not ] filter sequence>cons ] bi
     lappend <partitions> ;
 
-: sub-partition ( working-set paritions la -- new-working-set new-partitions )
+: sub-partition ( working-set partitions la -- new-working-set new-partitions )
     swap sets>> (sub-partition)
     number-sub-partitions
     [ update-working-set ] keep
@@ -137,16 +132,42 @@ C: <minimize-state> minimize-state
         ] foldr
         [ id>> swap working-set>> sets-vector>> delete-at ] dip
         tuple-slots first2 (my-minimize)
-    ] if
-    ; recursive
+    ] if ; recursive
 
+: reverse-partitions ( partitions -- hashtable )
+    sets>> [ [ id>> ] [ elems>> swap '[ _ 2array ] map ] bi ] map concat
+    >hashtable ;
+
+: update-destinations ( table partitions -- )
+    [ dup transitions>> ] [ reverse-partitions ] bi*
+    '[ [ _ at ] assoc-map ] assoc-map
+    >>transitions drop ;
+
+: update-transitions ( table partitions -- )
+    2dup update-destinations
+    over [ sets>> ] [ transitions>> ] bi* '[ [ id>> ] [ elems>> [ _ at ] map assoc-combine 2array ] bi ] map >hashtable 
+    >>transitions drop
+    ;
+
+: update-border-states ( table partitions -- )
+    [ 
+        sets>> over start-state>> '[ elems>> [ _ = ] find nip ] find 
+        nip id>> >>start-state drop
+    ] 
+    [
+        sets>> over final-states>> keys '[ dup elems>> _ intersect empty? [ drop { } ] [ id>> 1array ] if ] map concat 
+        dup zip >hashtable >>final-states drop
+    ] 
+    2bi ;
+
+: table>state-numbers ( table -- assoc )
+    transitions>> keys <enum> [ swap ] H{ } assoc-map-as ;
+
+: number-states ( table -- newtable )
+    dup table>state-numbers transitions-at ;
 
 : my-minimize ( table -- new-table )
-    prepare-state-partitioning
-    (my-minimize)
-    dup sets>> [ pprint "\n" print ] leach
-    ; 
-
-
-: reg2 ( -- reg )
-    "(aaww)|(bbww)" parse-regexp construct-nfa disambiguate construct-dfa number-states ;
+    number-states
+    dup prepare-state-partitioning
+    (my-minimize) [ list>array [ elems>> empty? not ] filter ] change-sets
+    dupd [ update-transitions ] [ update-border-states ] 2bi ;
