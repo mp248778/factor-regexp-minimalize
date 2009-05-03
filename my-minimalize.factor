@@ -8,7 +8,7 @@ tools.continuations
 ;
 
 IN: my-minimalize
-TUPLE: subset working elems ;
+TUPLE: subset working elems id ;
 
 C: <subset> subset
 
@@ -33,16 +33,16 @@ C: <subset> subset
 : prepare-state-partitioning ( table -- rev-trans-table partitions )
     {
         [ reverse-transition-table values sequence>cons ]
-        [ [ transitions>> keys ] [ final-states>> keys ] bi diff t swap <subset> ]
-        [ final-states>> keys t swap <subset> ]
+        [ [ transitions>> keys ] [ final-states>> keys ] bi diff t swap f <subset> ]
+        [ final-states>> keys t swap f <subset> ]
     } cleave
-    2list ! choose smaller one
+    2array [ elems>> length 0 = not ] filter sequence>cons
     ; 
 
 ! working should be per letter, not per alphabet (so it would be faster) 
 
 : create-sets ( first-working? set1 set2 -- set1' set2' )
-    [ f swap <subset> ] bi@ rot 
+    [ f swap f <subset> ] bi@ rot 
         [ [ t >>working ] bi@ ] 
         [ 2dup [ elems>> length ] bi@ < [ swap ] when t >>working ] 
     if ;
@@ -50,7 +50,7 @@ C: <subset> subset
 : (sub-partition) ( partition set -- new-partitions )
     [ tuple-slots first2 ] dip '[ _ key? ] partition
     2dup [ empty? ] either?
-    [ dup empty? [ swap ] unless drop <subset> 1list ] [ create-sets 2list ] if ;
+    [ dup empty? [ swap ] unless drop f <subset> 1list ] [ create-sets 2list ] if ;
 
 
 : sub-partition ( partitions set -- new-partitions )
@@ -77,6 +77,9 @@ C: <subset> subset
         '[ _ swap ingoing-states sub-partition ] foldr
         (my-minimize)
     ] if ; recursive
+
+: number-partitions ( partitions -- partitions' )
+    list>array dup <enum> [ swap >>id drop ] assoc-each ; 
 
 : reverse-partitions ( partitions -- hashtable )
     [ [ id>> ] [ elems>> swap '[ _ 2array ] map ] bi ] map concat
@@ -113,6 +116,5 @@ C: <subset> subset
 : my-minimize ( table -- new-table )
     number-states
     dup prepare-state-partitioning
-    break
-    (my-minimize) list>array [ elems>> empty? not ] filter
+    (my-minimize) number-partitions 
     dupd [ update-transitions ] [ update-border-states ] 2bi ;
