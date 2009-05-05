@@ -1,14 +1,11 @@
-! Copyright (C) 2009 Michal Pachucki.
+! Copyright (C) 2009 Daniel Ehrenberg, Michal Pachucki.
 ! See http://factorcode.org/license.txt for BSD license.
 USING: kernel sequences regexp.transition-tables fry assocs accessors arrays hashtables
 regexp.dfa regexp.classes lists prettyprint vectors locals sets combinators 
-deques math classes.tuple 
-
-tools.continuations
-;
+deques math classes.tuple sorting ;
 
 IN: my-minimalize
-TUPLE: subset working elems id ;
+TUPLE: subset working elems ;
 
 C: <subset> subset
 
@@ -33,16 +30,19 @@ C: <subset> subset
 : prepare-state-partitioning ( table -- rev-trans-table partitions )
     {
         [ reverse-transition-table values sequence>cons ]
-        [ [ transitions>> keys ] [ final-states>> keys ] bi diff t swap f <subset> ]
-        [ final-states>> keys t swap f <subset> ]
+        [ [ transitions>> keys ] [ final-states>> keys ] bi diff t swap <subset> ]
+        [ final-states>> keys t swap <subset> ]
     } cleave
     2array [ elems>> length 0 = not ] filter sequence>cons
     ; 
 
 ! working should be per letter, not per alphabet (so it would be faster) 
 
+
+! minimization
+
 : create-sets ( first-working? set1 set2 -- set1' set2' )
-    [ f swap f <subset> ] bi@ rot 
+    [ f swap <subset> ] bi@ rot 
         [ [ t >>working ] bi@ ] 
         [ 2dup [ elems>> length ] bi@ < [ swap ] when t >>working ] 
     if ;
@@ -50,7 +50,7 @@ C: <subset> subset
 : (sub-partition) ( partition set -- new-partitions )
     [ tuple-slots first2 ] dip '[ _ key? ] partition
     2dup [ empty? ] either?
-    [ dup empty? [ swap ] unless drop f <subset> 1list ] [ create-sets 2list ] if ;
+    [ dup empty? [ swap ] unless drop <subset> 1list ] [ create-sets 2list ] if ;
 
 
 : sub-partition ( partitions set -- new-partitions )
@@ -78,34 +78,38 @@ C: <subset> subset
         (my-minimize)
     ] if ; recursive
 
+
+
+! reconstruct transition table
+
+
 : number-partitions ( partitions -- partitions' )
-    list>array dup <enum> [ swap >>id drop ] assoc-each ; 
+    [ elems>> natural-sort ] lmap [ dup first '[ _ 2array ] map ] lmap list>array concat ;
 
-: reverse-partitions ( partitions -- hashtable )
-    [ [ id>> ] [ elems>> swap '[ _ 2array ] map ] bi ] map concat
-    >hashtable ;
+: has-conditions? ( assoc -- ? )
+    values [ condition? ] any? ;
 
-: update-destinations ( table partitions -- )
-    [ dup transitions>> ] [ reverse-partitions ] bi*
-    '[ [ _ at ] assoc-map ] assoc-map
-    >>transitions drop ;
+: canonical-state? ( state transitions state-classes -- ? )
+    '[ dup _ at =  ] swap '[ _ at has-conditions? ] bi or ;
 
-: update-transitions ( table partitions -- )
-    2dup update-destinations
-    over transitions>> '[ [ id>> ] [ elems>> [ _ at ] map assoc-combine 2array ] bi ] map >hashtable 
-    >>transitions drop
-    ;
+: delete-duplicates ( transitions state-classes -- new-transitions )
+    dupd '[ drop _ _ canonical-state? ] assoc-filter ;
 
-: update-border-states ( table partitions -- )
-    [ 
-        over start-state>> '[ elems>> [ _ = ] find nip ] find 
-        nip id>> >>start-state drop
-    ] 
-    [
-        over final-states>> keys '[ dup elems>> _ intersect empty? [ drop { } ] [ id>> 1array ] if ] map concat 
-        dup zip >hashtable >>final-states drop
-    ] 
-    2bi ;
+: combine-states ( table classes -- smaller-table )
+    [ transitions-at ] keep
+    '[ _ delete-duplicates ] change-transitions ;
+
+: combine-state-transitions ( hash -- hash )
+    H{ } clone tuck '[
+        _ [ 2array <or-class> ] change-at
+    ] assoc-each [ swap ] assoc-map ;
+
+: combine-transitions ( table -- table )
+    [ [ combine-state-transitions ] assoc-map ] change-transitions ;
+
+
+! set proper numbering
+
 
 : table>state-numbers ( table -- assoc )
     transitions>> keys <enum> [ swap ] H{ } assoc-map-as ;
@@ -113,8 +117,13 @@ C: <subset> subset
 : number-states ( table -- newtable )
     dup table>state-numbers transitions-at ;
 
+
+! minimize
+
 : my-minimize ( table -- new-table )
     number-states
     dup prepare-state-partitioning
-    (my-minimize) number-partitions 
-    dupd [ update-transitions ] [ update-border-states ] 2bi ;
+    (my-minimize) number-partitions >hashtable
+    combine-states
+    combine-transitions
+    expand-ors ;
